@@ -5,9 +5,16 @@ import numpy as np
 import pandas as pd
 import time
 
-# Ensure scikit-learn is imported so unpickling can find all modules
-import sklearn
-import sklearn.ensemble
+# Ensure scikit-learn is imported for model unpickling
+try:
+    import sklearn
+    import sklearn.ensemble
+except ModuleNotFoundError:
+    st.error(
+        "**ModuleNotFoundError**: `scikit-learn` is not installed in this environment.\n\n"
+        "If you are deploying on **Streamlit Cloud**, add `scikit-learn` to your `requirements.txt` file in your repository root."
+    )
+    st.stop()
 
 # Page Configuration
 st.set_page_config(
@@ -85,7 +92,6 @@ try:
     model = load_model()
 except Exception as e:
     st.error(f"Error loading `gradient.pkl`: {e}")
-    st.info("Ensure `scikit-learn` is installed in your Python environment via `pip install scikit-learn`.")
     st.stop()
 
 # Header Section
