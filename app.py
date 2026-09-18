@@ -5,6 +5,10 @@ import numpy as np
 import pandas as pd
 import time
 
+# Ensure scikit-learn is imported so unpickling can find all modules
+import sklearn
+import sklearn.ensemble
+
 # Page Configuration
 st.set_page_config(
     page_title="Model Predictor",
@@ -81,6 +85,7 @@ try:
     model = load_model()
 except Exception as e:
     st.error(f"Error loading `gradient.pkl`: {e}")
+    st.info("Ensure `scikit-learn` is installed in your Python environment via `pip install scikit-learn`.")
     st.stop()
 
 # Header Section
@@ -105,7 +110,7 @@ with st.container():
 
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Feature Encoding Map (Adjust based on your training pipeline encodings if needed)
+# Feature Encoding Map
 gender_map = {"Female": 0, "Male": 1}
 review_map = {"Average": 0, "Good": 1, "Poor": 2}
 education_map = {"PG": 0, "School": 1, "UG": 2}
