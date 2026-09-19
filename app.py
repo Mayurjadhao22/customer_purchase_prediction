@@ -1,61 +1,10 @@
-import threading
-import time
 import pickle
 import numpy as np
 import pandas as pd
 import streamlit as st
-from flask import Flask, request, jsonify
 
 # ==========================================
-# 1. FLASK BACKEND SETUP
-# ==========================================
-flask_app = Flask(__name__)
-
-# Load Model safely
-MODEL_PATH = "gradient.pkl"
-
-def load_model():
-    with open(MODEL_PATH, "rb") as f:
-        return pickle.load(f)
-
-@flask_app.route("/predict", methods=["POST"])
-def predict_api():
-    try:
-        model = load_model()
-        data = request.get_json()
-        
-        # Extract features in correct order: age, gender, review, education
-        input_data = pd.DataFrame([{
-            "age": float(data["age"]),
-            "gender": int(data["gender"]),
-            "review": int(data["review"]),
-            "education": int(data["education"])
-        }])
-        
-        prediction = model.predict(input_data)[0]
-        probabilities = model.predict_proba(input_data)[0].tolist()
-        
-        return jsonify({
-            "status": "success",
-            "prediction": str(prediction),
-            "probabilities": probabilities
-        })
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 400
-
-def run_flask():
-    # Run Flask API silently on port 5000
-    flask_app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
-
-# Start Flask as a background thread if not already running
-if not any(thread.name == "FlaskThread" for thread in threading.enumerate()):
-    flask_thread = threading.Thread(target=run_flask, name="FlaskThread", daemon=True)
-    flask_thread.start()
-    time.sleep(1)  # Allow server time to spin up
-
-
-# ==========================================
-# 2. STREAMLIT FRONTEND & STYLING
+# 1. PAGE CONFIGURATION & CUSTOM CSS
 # ==========================================
 st.set_page_config(
     page_title="Gradient Boosting Predictor",
@@ -63,7 +12,7 @@ st.set_page_config(
     layout="centered"
 )
 
-# Custom CSS for shadow effects, clean cards, and layout styling
+# Custom CSS for modern design & shadow effects
 st.markdown("""
     <style>
     /* Main container background */
@@ -71,7 +20,7 @@ st.markdown("""
         background-color: #f8f9fa;
     }
     
-    /* Header Section with Shadow */
+    /* Header Section with Soft Shadow */
     .header-card {
         background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
         padding: 2.5rem;
@@ -97,12 +46,12 @@ st.markdown("""
         margin-bottom: 2rem;
     }
     
-    /* Input Field Customization */
+    /* Input Field Styling */
     div[data-baseweb="select"], div[data-baseweb="input"] {
         border-radius: 10px !important;
     }
     
-    /* Predict Button with Hover Elevation */
+    /* Predict Button Styling */
     div.stButton > button {
         width: 100%;
         background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
@@ -133,15 +82,27 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Render Custom Header
+# ==========================================
+# 2. MODEL LOADING WITH CACHING
+# ==========================================
+MODEL_PATH = "gradient.pkl"
+
+@st.cache_resource
+def load_model():
+    """Loads the pickled model and caches it in memory."""
+    with open(MODEL_PATH, "rb") as f:
+        return pickle.load(f)
+
+# ==========================================
+# 3. UI LAYOUT & INPUT FIELDS
+# ==========================================
 st.markdown("""
     <div class="header-card">
         <h1>Model Inference Studio</h1>
-        <p>Gradient Boosting Classifier Portal</p>
+        <p>Customer Purchase Prediction Portal</p>
     </div>
 """, unsafe_allow_html=True)
 
-# Form Layout Inside Styled Container
 st.markdown('<div class="form-card">', unsafe_allow_html=True)
 st.subheader("📋 Enter Input Parameters")
 
@@ -165,35 +126,43 @@ with col2:
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# Submit & Predict Action
+# ==========================================
+# 4. PREDICTION INFERENCE
+# ==========================================
 if st.button("🚀 Run Prediction"):
-    # Map input selections back to numerical features expected by the model
-    payload = {
-        "age": age,
-        "gender": gender_map[gender_selected],
-        "review": review_map[review_selected],
-        "education": education_map[education_selected]
-    }
-    
     try:
-        # Load local model directly for Streamlit response
         model = load_model()
-        input_df = pd.DataFrame([payload])
         
-        prediction = model.predict(input_df)[0]
-        probabilities = model.predict_proba(input_df)[0]
+        # Structure features into DataFrame expected by model
+        input_data = pd.DataFrame([{
+            "age": float(age),
+            "gender": int(gender_map[gender_selected]),
+            "review": int(review_map[review_selected]),
+            "education": int(education_map[education_selected])
+        }])
         
-        # Display Result with Soft Card Effect
+        # Execute prediction
+        prediction = model.predict(input_data)[0]
+        
+        # Extract probability if model supports it
+        if hasattr(model, "predict_proba"):
+            probabilities = model.predict_proba(input_data)[0]
+            prob_no = f"{probabilities[0]*100:.1f}%"
+            prob_yes = f"{probabilities[1]*100:.1f}%"
+            prob_text = f"Confidence (No): <b>{prob_no}</b> | Confidence (Yes): <b>{prob_yes}</b>"
+        else:
+            prob_text = "Probability scores not available for this model."
+
+        # Display Result Card
         st.markdown(f"""
             <div class="result-card">
                 <h3 style="margin:0; color:#1E293B;">Prediction Result: <span style="color:#4F46E5;">{prediction}</span></h3>
-                <p style="margin-top:8px; color:#64748B;">
-                    Confidence (No): <b>{probabilities[0]*100:.1f}%</b> | 
-                    Confidence (Yes): <b>{probabilities[1]*100:.1f}%</b>
-                </p>
+                <p style="margin-top:8px; color:#64748B;">{prob_text}</p>
             </div>
         """, unsafe_allow_html=True)
         st.balloons()
         
+    except FileNotFoundError:
+        st.error(f"Could not find `{MODEL_PATH}`. Make sure `gradient.pkl` is pushed to your GitHub repository.")
     except Exception as err:
         st.error(f"Error processing prediction: {err}")
