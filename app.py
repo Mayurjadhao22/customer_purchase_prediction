@@ -1,168 +1,199 @@
-# app.py
-import streamlit as st
+import threading
+import time
 import pickle
 import numpy as np
 import pandas as pd
-import time
+import streamlit as st
+from flask import Flask, request, jsonify
 
-# Ensure scikit-learn is imported for model unpickling
-try:
-    import sklearn
-    import sklearn.ensemble
-except ModuleNotFoundError:
-    st.error(
-        "**ModuleNotFoundError**: `scikit-learn` is not installed in this environment.\n\n"
-        "If you are deploying on **Streamlit Cloud**, add `scikit-learn` to your `requirements.txt` file in your repository root."
-    )
-    st.stop()
+# ==========================================
+# 1. FLASK BACKEND SETUP
+# ==========================================
+flask_app = Flask(__name__)
 
-# Page Configuration
+# Load Model safely
+MODEL_PATH = "gradient.pkl"
+
+def load_model():
+    with open(MODEL_PATH, "rb") as f:
+        return pickle.load(f)
+
+@flask_app.route("/predict", methods=["POST"])
+def predict_api():
+    try:
+        model = load_model()
+        data = request.get_json()
+        
+        # Extract features in correct order: age, gender, review, education
+        input_data = pd.DataFrame([{
+            "age": float(data["age"]),
+            "gender": int(data["gender"]),
+            "review": int(data["review"]),
+            "education": int(data["education"])
+        }])
+        
+        prediction = model.predict(input_data)[0]
+        probabilities = model.predict_proba(input_data)[0].tolist()
+        
+        return jsonify({
+            "status": "success",
+            "prediction": str(prediction),
+            "probabilities": probabilities
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+def run_flask():
+    # Run Flask API silently on port 5000
+    flask_app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False)
+
+# Start Flask as a background thread if not already running
+if not any(thread.name == "FlaskThread" for thread in threading.enumerate()):
+    flask_thread = threading.Thread(target=run_flask, name="FlaskThread", daemon=True)
+    flask_thread.start()
+    time.sleep(1)  # Allow server time to spin up
+
+
+# ==========================================
+# 2. STREAMLIT FRONTEND & STYLING
+# ==========================================
 st.set_page_config(
-    page_title="Model Predictor",
+    page_title="Gradient Boosting Predictor",
     page_icon="🔮",
     layout="centered"
 )
 
-# Custom Styling & Animations
+# Custom CSS for shadow effects, clean cards, and layout styling
 st.markdown("""
-<style>
-    /* Main App Background Gradient */
+    <style>
+    /* Main container background */
     .stApp {
-        background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
-        color: #f8fafc;
+        background-color: #f8f9fa;
     }
-
-    /* Card Containers */
-    .css-card {
-        background: rgba(255, 255, 255, 0.05);
-        backdrop-filter: blur(10px);
+    
+    /* Header Section with Shadow */
+    .header-card {
+        background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+        padding: 2.5rem;
         border-radius: 16px;
-        padding: 24px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        margin-bottom: 24px;
-    }
-
-    /* Animated Prediction Button */
-    .stButton > button {
-        width: 100%;
-        background: linear-gradient(90deg, #6366f1 0%, #a855f7 100%);
         color: white;
-        border: none;
-        padding: 14px 28px;
-        font-size: 18px;
-        font-weight: 600;
-        border-radius: 12px;
-        transition: all 0.3s ease;
-        box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
-    }
-
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 25px rgba(168, 85, 247, 0.5);
-        color: #ffffff;
-    }
-
-    /* Result Pulse Animation */
-    @keyframes pulse {
-        0% { transform: scale(0.98); opacity: 0.8; }
-        50% { transform: scale(1.02); opacity: 1; }
-        100% { transform: scale(1); opacity: 1; }
-    }
-
-    .result-container {
-        animation: pulse 0.6s ease-out forwards;
-        background: rgba(255, 255, 255, 0.08);
-        border-radius: 16px;
-        padding: 20px;
         text-align: center;
-        border: 2px solid #a855f7;
-        margin-top: 20px;
+        box-shadow: 0 10px 25px -5px rgba(79, 70, 229, 0.4), 0 8px 10px -6px rgba(79, 70, 229, 0.2);
+        margin-bottom: 2rem;
     }
-</style>
+    .header-card h1 {
+        color: white !important;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+    }
+    
+    /* Form Container Card with Soft Shadow */
+    .form-card {
+        background: #ffffff;
+        padding: 2rem;
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.03);
+        border: 1px solid #edf2f7;
+        margin-bottom: 2rem;
+    }
+    
+    /* Input Field Customization */
+    div[data-baseweb="select"], div[data-baseweb="input"] {
+        border-radius: 10px !important;
+    }
+    
+    /* Predict Button with Hover Elevation */
+    div.stButton > button {
+        width: 100%;
+        background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+        color: white;
+        font-weight: 600;
+        font-size: 1.1rem;
+        padding: 0.75rem;
+        border-radius: 10px;
+        border: none;
+        box-shadow: 0 4px 14px 0 rgba(79, 70, 229, 0.39);
+        transition: all 0.3s ease;
+    }
+    div.stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px 0 rgba(79, 70, 229, 0.5);
+        color: white;
+    }
+    
+    /* Output Result Box */
+    .result-card {
+        background: #ffffff;
+        padding: 1.5rem;
+        border-radius: 12px;
+        border-left: 6px solid #4F46E5;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        margin-top: 1rem;
+    }
+    </style>
 """, unsafe_allow_html=True)
 
-# Load Model
-@st.cache_resource
-def load_model():
-    with open('gradient.pkl', 'rb') as file:
-        model = pickle.load(file)
-    return model
+# Render Custom Header
+st.markdown("""
+    <div class="header-card">
+        <h1>Model Inference Studio</h1>
+        <p>Gradient Boosting Classifier Portal</p>
+    </div>
+""", unsafe_allow_html=True)
 
-try:
-    model = load_model()
-except Exception as e:
-    st.error(f"Error loading `gradient.pkl`: {e}")
-    st.stop()
+# Form Layout Inside Styled Container
+st.markdown('<div class="form-card">', unsafe_allow_html=True)
+st.subheader("📋 Enter Input Parameters")
 
-# Header Section
-st.title("🔮 AI Prediction Portal")
-st.caption("Gradient Boosting Classifier Inference Pipeline")
-st.markdown("---")
+col1, col2 = st.columns(2)
 
-# Input Form
-with st.container():
-    st.markdown('<div class="css-card">', unsafe_allow_html=True)
-    st.subheader("📋 Enter Details")
+with col1:
+    age = st.number_input("Age", min_value=1, max_value=120, value=30, step=1)
+    
+    # Categorical Column 1: Gender
+    gender_map = {"Female": 0, "Male": 1}
+    gender_selected = st.selectbox("Gender", options=list(gender_map.keys()))
 
-    col1, col2 = st.columns(2)
+with col2:
+    # Categorical Column 2: Review Grade
+    review_map = {"Poor": 0, "Average": 1, "Good": 2}
+    review_selected = st.selectbox("Review Grade", options=list(review_map.keys()))
+    
+    # Categorical Column 3: Education Level
+    education_map = {"School / High School": 0, "UG / Graduate": 1, "PG / Post Graduate": 2}
+    education_selected = st.selectbox("Education Level", options=list(education_map.keys()))
 
-    with col1:
-        age = st.number_input("Age", min_value=1, max_value=120, value=25)
-        gender = st.selectbox("Gender", options=["Male", "Female"])
+st.markdown('</div>', unsafe_allow_html=True)
 
-    with col2:
-        review = st.selectbox("Review Rating", options=["Poor", "Average", "Good"])
-        education = st.selectbox("Education Level", options=["School", "UG", "PG"])
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# Feature Encoding Map
-gender_map = {"Female": 0, "Male": 1}
-review_map = {"Average": 0, "Good": 1, "Poor": 2}
-education_map = {"PG": 0, "School": 1, "UG": 2}
-
-# Prediction Logic & Effects
-if st.button("🚀 Predict Outcome"):
-    # Trigger Confetti Celebration Effect
-    st.balloons()
-
-    # Progress bar effect
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-
-    for i in range(100):
-        time.sleep(0.005)
-        progress_bar.progress(i + 1)
-        status_text.text(f"Analyzing inputs... {i+1}%")
-
-    status_text.empty()
-    progress_bar.empty()
-
-    # Prepare input array
-    encoded_inputs = np.array([[
-        age,
-        gender_map[gender],
-        review_map[review],
-        education_map[education]
-    ]])
-
-    # Make Prediction
-    prediction = model.predict(encoded_inputs)[0]
-    probabilities = model.predict_proba(encoded_inputs)[0]
-
-    # Display Results with Animation
-    st.markdown('<div class="result-container">', unsafe_allow_html=True)
-    if str(prediction).lower() in ["yes", "1"]:
-        st.success(f"### Prediction Result: **{prediction}** 🎉")
-    else:
-        st.info(f"### Prediction Result: **{prediction}**")
-
-    # Display class probabilities
-    classes = getattr(model, "classes_", ["Class 0", "Class 1"])
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.metric(f"Probability ({classes[0]})", f"{probabilities[0]*100:.1f}%")
-    with col_b:
-        st.metric(f"Probability ({classes[1]})", f"{probabilities[1]*100:.1f}%")
-
-    st.markdown('</div>', unsafe_allow_html=True)
+# Submit & Predict Action
+if st.button("🚀 Run Prediction"):
+    # Map input selections back to numerical features expected by the model
+    payload = {
+        "age": age,
+        "gender": gender_map[gender_selected],
+        "review": review_map[review_selected],
+        "education": education_map[education_selected]
+    }
+    
+    try:
+        # Load local model directly for Streamlit response
+        model = load_model()
+        input_df = pd.DataFrame([payload])
+        
+        prediction = model.predict(input_df)[0]
+        probabilities = model.predict_proba(input_df)[0]
+        
+        # Display Result with Soft Card Effect
+        st.markdown(f"""
+            <div class="result-card">
+                <h3 style="margin:0; color:#1E293B;">Prediction Result: <span style="color:#4F46E5;">{prediction}</span></h3>
+                <p style="margin-top:8px; color:#64748B;">
+                    Confidence (No): <b>{probabilities[0]*100:.1f}%</b> | 
+                    Confidence (Yes): <b>{probabilities[1]*100:.1f}%</b>
+                </p>
+            </div>
+        """, unsafe_allow_html=True)
+        st.balloons()
+        
+    except Exception as err:
+        st.error(f"Error processing prediction: {err}")
